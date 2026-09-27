@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>社保缴费清单上送台</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "PingFang SC","Microsoft YaHei",sans-serif; background:#f0f2f5; color:#333; }
+  header { background:#1f3a5f; color:#fff; padding:14px 24px; font-size:18px; font-weight:600; }
+  header small { font-weight:400; font-size:12px; opacity:.75; margin-left:10px; }
+  .wrap { max-width:1200px; margin:20px auto; padding:0 16px; }
+  .card { background:#fff; border-radius:8px; padding:16px 20px; margin-bottom:16px;
+          box-shadow:0 1px 3px rgba(0,0,0,.08); }
+  .card h3 { font-size:15px; margin-bottom:12px; color:#1f3a5f; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { padding:8px 10px; border-bottom:1px solid #eee; text-align:left; white-space:nowrap; }
+  th { background:#fafafa; color:#666; font-weight:600; }
+  .btn { border:none; border-radius:4px; padding:5px 12px; font-size:12px; cursor:pointer;
+         background:#1f6fd6; color:#fff; margin-right:4px; }
+  .btn:hover { opacity:.85; } .btn:disabled { background:#bbb; cursor:not-allowed; }
+  .btn.gray { background:#6b7280; } .btn.green { background:#0f9d58; } .btn.orange { background:#e8862e; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; }
+  .t-IMPORTED{background:#6b7280}.t-VALIDATED{background:#0f9d58}.t-SUBMITTING{background:#e8862e}
+  .t-DONE{background:#1f6fd6}.t-PENDING{background:#6b7280}.t-SUCCESS{background:#0f9d58}
+  .t-PARTIAL{background:#e8862e}.t-FAILED{background:#d64545}.t-TIMEOUT{background:#b0413e}
+  .t-VALID{background:#0f9d58}.t-INVALID{background:#d64545}.t-NONE{background:#9ca3af}
+  input[type=text],input[type=file] { padding:6px 8px; border:1px solid #d0d5dd; border-radius:4px; font-size:13px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .stats { display:flex; gap:18px; flex-wrap:wrap; font-size:13px; margin:6px 0 12px; }
+  .stats b { font-size:17px; }
+  .muted { color:#999; font-size:12px; }
+  .err { color:#d64545; font-size:12px; max-width:260px; white-space:normal; }
+  #toast { position:fixed; top:16px; right:16px; padding:10px 18px; border-radius:6px; color:#fff;
+           background:#333; display:none; z-index:9; max-width:420px; font-size:13px; }
+  .tabs button { background:none; border:none; padding:6px 12px; cursor:pointer; font-size:13px;
+                 border-bottom:2px solid transparent; color:#666; }
+  .tabs button.on { color:#1f6fd6; border-color:#1f6fd6; font-weight:600; }
+  .pg button { margin:0 4px; }
+</style>
+</head>
+<body>
+<header>社保缴费清单上送台<small>导入 → 校验 → 分批上送 → 结果回写 → 重试/错误明细</small></header>
+<div class="wrap">
+  <div class="card">
+    <h3>① 导入缴费清单(CSV, 表头: 姓名,身份证号,缴费月份,缴费金额,单位编号)</h3>
+    <div class="row">
+      <input type="text" id="taskName" placeholder="任务名称(可选)" size="22">
+      <input type="file" id="file" accept=".csv">
+      <button class="btn green" onclick="upload()">导入任务</button>
+      <span class="muted" id="uploadMsg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>任务列表 <button class="btn gray" onclick="loadTasks()">刷新</button></h3>
+    <table><thead><tr>
+      <th>ID</th><th>任务名</th><th>状态</th><th>总数</th><th>有效/无效</th>
+      <th>上送成功</th><th>上送失败</th><th>超时批次</th><th>创建时间</th><th>操作</th>
+    </tr></thead><tbody id="taskBody"></tbody></table>
+  </div>
+
+  <div class="card" id="detailCard" style="display:none">
+    <h3>任务详情 #<span id="dId"></span> <span class="muted" id="dName"></span></h3>
+    <div class="stats" id="dStats"></div>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn green" id="btnValidate" onclick="doValidate()">② 执行校验</button>
+      <button class="btn" id="btnSubmit" onclick="doSubmit()">③ 分批上送</button>
+      <button class="btn orange" onclick="downloadErrors()">下载错误明细CSV</button>
+      <span class="muted" id="opMsg"></span>
+    </div>
+    <h3>批次列表(超时/失败可重试)</h3>
+    <table><thead><tr>
+      <th>批次号</th><th>状态</th><th>记录数</th><th>成功</th><th>失败</th><th>重试次数</th>
+      <th>平台批次号</th><th>提交时间</th><th>错误信息</th><th>操作</th>
+    </tr></thead><tbody id="batchBody"></tbody></table>
+    <h3 style="margin-top:16px">记录明细</h3>
+    <div class="tabs" id="recTabs">
+      <button data-s="" class="on" onclick="setFilter(this)">全部</button>
+      <button data-s="invalid" onclick="setFilter(this)">校验失败</button>
+      <button data-s="failed" onclick="setFilter(this)">上送失败</button>
+      <button data-s="success" onclick="setFilter(this)">上送成功</button>
+    </div>
+    <table><thead><tr>
+      <th>行号</th><th>姓名</th><th>身份证号</th><th>月份</th><th>金额</th><th>单位编号</th>
+      <th>校验</th><th>上送</th><th>错误原因</th>
+    </tr></thead><tbody id="recBody"></tbody></table>
+    <div class="pg" style="margin-top:8px">
+      <button class="btn gray" onclick="page(-1)">上一页</button>
+      <span id="pgInfo" class="muted"></span>
+      <button class="btn gray" onclick="page(1)">下一页</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+<script>
+let curTask = null, recStatus = "", recPage = 1, recSize = 50, recTotal = 0;
+
+function toast(msg, bad){ const t=document.getElementById('toast');
+  t.textContent=msg; t.style.background=bad?'#d64545':'#0f9d58'; t.style.display='block';
+  setTimeout(()=>t.style.display='none', 3500); }
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(()=>({code:1,msg:'响应解析失败'}));
+  if(j.code!==0) throw new Error(j.msg||'请求失败');
+  return j.data;
+}
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const tag = s => `<span class="tag t-${s}">${s}</span>`;
+
+async function upload(){
+  const f = document.getElementById('file').files[0];
+  if(!f) return toast('请选择CSV文件', true);
+  const fd = new FormData();
+  fd.append('name', document.getElementById('taskName').value || f.name);
+  fd.append('file', f);
+  document.getElementById('uploadMsg').textContent = '导入中...';
+  try{
+    const d = await api('/api/tasks', {method:'POST', body:fd});
+    toast('导入成功, 任务ID=' + d.task_id);
+    document.getElementById('uploadMsg').textContent = '';
+    loadTasks();
+  }catch(e){ document.getElementById('uploadMsg').textContent='';
+    toast('导入失败: '+e.message, true); }
+}
+
+async function loadTasks(){
+  const rows = await api('/api/tasks');
+  document.getElementById('taskBody').innerHTML = rows.map(t=>`<tr>
+    <td>${t.id}</td><td>${esc(t.name)}</td><td>${tag(t.status)}</td><td>${t.total_count}</td>
+    <td>${t.valid_count} / ${t.invalid_count}</td>
+    <td style="color:#0f9d58">${t.success_count}</td>
+    <td style="color:#d64545">${t.failed_count}</td>
+    <td>${t.timeout_batches||0}</td><td>${t.created_at}</td>
+    <td><button class="btn" onclick="openTask(${t.id})">详情</button></td></tr>`).join('')
+    || '<tr><td colspan="10" class="muted">暂无任务</td></tr>';
+  if(curTask) loadDetail();
+}
+
+async function openTask(id){
+  curTask = id; recPage = 1; recStatus = "";
+  document.getElementById('detailCard').style.display='block';
+  document.querySelectorAll('#recTabs button').forEach((b,i)=>b.className=i?'':'on');
+  await loadDetail();
+}
+
+async function loadDetail(){
+  if(!curTask) return;
+  const t = await api('/api/tasks/'+curTask);
+  document.getElementById('dId').textContent = t.id;
+  document.getElementById('dName').textContent = t.name;
+  document.getElementById('dStats').innerHTML = `
+    <span>状态 ${tag(t.status)}</span><span>总数 <b>${t.total_count}</b></span>
+    <span>有效 <b style="color:#0f9d58">${t.valid_count}</b></span>
+    <span>无效 <b style="color:#d64545">${t.invalid_count}</b></span>
+    <span>批次数 <b>${t.batch_count}</b></span>
+    <span>上送成功 <b style="color:#0f9d58">${t.success_count}</b></span>
+    <span>上送失败 <b style="color:#d64545">${t.failed_count}</b></span>
+    <span>超时批次 <b style="color:#b0413e">${t.timeout_batches||0}</b></span>`;
+  document.getElementById('btnValidate').disabled = !['IMPORTED','VALIDATED'].includes(t.status);
+  document.getElementById('btnSubmit').disabled = t.status!=='VALIDATED';
+  const bs = await api('/api/tasks/'+curTask+'/batches');
+  document.getElementById('batchBody').innerHTML = bs.map(b=>`<tr>
+    <td>#${b.batch_no}</td><td>${tag(b.status)}</td><td>${b.record_count}</td>
+    <td style="color:#0f9d58">${b.success_count}</td>
+    <td style="color:#d64545">${b.failed_count}</td><td>${b.retry_count}</td>
+    <td>${esc(b.platform_batch_id)||'-'}</td><td>${b.submitted_at||'-'}</td>
+    <td class="err">${esc(b.error_message)||''}</td>
+    <td>${['TIMEOUT','FAILED'].includes(b.status)
+        ? `<button class="btn orange" onclick="retryBatch(${b.id})">重试</button>` : ''}</td></tr>`).join('')
+    || '<tr><td colspan="10" class="muted">尚未生成批次</td></tr>';
+  loadRecords();
+}
+
+async function loadRecords(){
+  const d = await api(`/api/tasks/${curTask}/records?status=${recStatus}&page=${recPage}&size=${recSize}`);
+  recTotal = d.total;
+  document.getElementById('recBody').innerHTML = d.rows.map(r=>`<tr>
+    <td>${r.row_no}</td><td>${esc(r.person_name)}</td><td>${esc(r.id_card)}</td>
+    <td>${esc(r.month)}</td><td>${esc(r.amount)}</td><td>${esc(r.unit_code)}</td>
+    <td>${tag(r.validate_status)}</td><td>${tag(r.submit_status)}</td>
+    <td class="err">${esc(r.validate_error||r.submit_error)||''}</td></tr>`).join('')
+    || '<tr><td colspan="9" class="muted">无记录</td></tr>';
+  document.getElementById('pgInfo').textContent =
+    `第${recPage}页 / 共${Math.max(1,Math.ceil(recTotal/recSize))}页 (${recTotal}条)`;
+}
+
+function setFilter(btn){
+  document.querySelectorAll('#recTabs button').forEach(b=>b.className='');
+  btn.className='on'; recStatus = btn.dataset.s; recPage = 1; loadRecords();
+}
+function page(d){ const p = recPage + d;
+  if(p>=1 && (p-1)*recSize < recTotal){ recPage = p; loadRecords(); } }
+
+async function doValidate(){
+  setOp('校验中...');
+  try{ const d = await api(`/api/tasks/${curTask}/validate`, {method:'POST'});
+    toast(`校验完成: 有效${d.valid}条, 无效${d.invalid}条`); setOp('');
+  }catch(e){ setOp(''); return toast(e.message, true); }
+  loadTasks();
+}
+async function doSubmit(){
+  setOp('上送中(后台分批执行, 可观察批次状态变化)...');
+  try{ const d = await api(`/api/tasks/${curTask}/submit`, {method:'POST'});
+    toast(`已启动上送: ${d.batches}个批次 / ${d.records}条记录`);
+  }catch(e){ setOp(''); return toast(e.message, true); }
+  loadTasks();
+}
+async function retryBatch(id){
+  try{ await api(`/api/batches/${id}/retry`, {method:'POST'}); toast('已发起重试'); }
+  catch(e){ return toast(e.message, true); }
+  loadTasks();
+}
+function downloadErrors(){
+  if(!curTask) return;
+  window.open(`/api/tasks/${curTask}/errors.csv`, '_blank');
+}
+function setOp(m){ document.getElementById('opMsg').textContent = m; }
+
+loadTasks();
+setInterval(loadTasks, 2500);
+</script>
+</body>
+</html>
