@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>社保缴费清单上送台</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; }
+  header { background: #1f3a5f; color: #fff; padding: 14px 24px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .badge { background: #3d5a80; font-size: 12px; padding: 2px 8px; border-radius: 10px; }
+  .container { max-width: 1280px; margin: 20px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card h2 { font-size: 15px; margin-bottom: 14px; color: #1f3a5f; border-left: 4px solid #1f3a5f; padding-left: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; white-space: nowrap; }
+  th { background: #fafafa; color: #666; font-weight: 600; }
+  tr:hover td { background: #f8fafc; }
+  .btn { display: inline-block; padding: 5px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; background: #1f3a5f; color: #fff; }
+  .btn:hover { background: #2d5282; }
+  .btn:disabled { background: #b0b8c4; cursor: not-allowed; }
+  .btn-sm { padding: 3px 8px; font-size: 12px; }
+  .btn-outline { background: #fff; color: #1f3a5f; border: 1px solid #1f3a5f; }
+  .btn-outline:hover { background: #eef3f9; }
+  .btn-danger { background: #c0392b; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+  .tag-PENDING, .tag-VALIDATING, .tag-SUBMITTING { background: #fff7e6; color: #d48806; }
+  .tag-VALIDATED { background: #e6f4ff; color: #1677ff; }
+  .tag-COMPLETED, .tag-SUCCESS, .tag-VALID { background: #f6ffed; color: #389e0d; }
+  .tag-FAILED, .tag-INVALID { background: #fff1f0; color: #cf1322; }
+  .tag-TIMEOUT { background: #fff0f6; color: #c41d7f; }
+  .tag-PARTIAL_FAILED { background: #fff7e6; color: #d46b08; }
+  .upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hint { color: #999; font-size: 12px; }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stat { background: #f8fafc; border-radius: 6px; padding: 10px 18px; text-align: center; min-width: 90px; }
+  .stat .num { font-size: 22px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: #888; margin-top: 2px; }
+  .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; }
+  .modal { display: none; position: fixed; top: 4vh; left: 50%; transform: translateX(-50%); width: 92%; max-width: 1100px; max-height: 90vh; overflow-y: auto; background: #fff; border-radius: 8px; padding: 20px 24px; z-index: 101; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .modal-header h3 { font-size: 16px; }
+  .close-x { cursor: pointer; font-size: 20px; color: #999; border: none; background: none; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #eee; }
+  .tab { padding: 8px 16px; cursor: pointer; font-size: 13px; border: none; background: none; color: #666; border-bottom: 2px solid transparent; }
+  .tab.active { color: #1f3a5f; border-bottom-color: #1f3a5f; font-weight: 600; }
+  .filter-row { margin-bottom: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  select, input[type=text] { padding: 5px 8px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 13px; }
+  .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 6px; color: #fff; font-size: 14px; z-index: 200; display: none; }
+  .toast.ok { background: #389e0d; } .toast.err { background: #cf1322; }
+  .num-err { color: #cf1322; font-weight: 600; } .num-ok { color: #389e0d; font-weight: 600; } .num-warn { color: #c41d7f; font-weight: 600; }
+  .empty { color: #aaa; text-align: center; padding: 24px 0; font-size: 13px; }
+  .pager { margin-top: 10px; display: flex; gap: 8px; align-items: center; font-size: 13px; color: #666; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>社保缴费清单上送台</h1><span class="badge">v1.0</span>
+</header>
+<div class="container">
+
+  <div class="card">
+    <h2>导入缴费清单</h2>
+    <div class="upload-row">
+      <input type="file" id="fileInput" accept=".csv">
+      <button class="btn" onclick="uploadFile()">上传并校验</button>
+      <a class="btn btn-outline" href="/api/sample-csv" download>下载模板</a>
+      <span class="hint">CSV 列：身份证号,姓名,缴费月份,缴费金额,单位编号（支持 UTF-8/GBK，单任务≤20万行）</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>任务列表 <button class="btn btn-outline btn-sm" style="margin-left:8px" onclick="loadTasks()">刷新</button></h2>
+    <table>
+      <thead><tr>
+        <th>任务编号</th><th>文件名</th><th>状态</th><th>总数</th><th>校验通过</th><th>校验失败</th>
+        <th>上送成功</th><th>上送失败</th><th>超时</th><th>创建时间</th><th>操作</th>
+      </tr></thead>
+      <tbody id="taskBody"><tr><td colspan="11" class="empty">加载中…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>缴费单位管理</h2>
+    <div class="filter-row">
+      <input type="text" id="unitCode" placeholder="单位编号" style="width:140px">
+      <input type="text" id="unitName" placeholder="单位名称" style="width:220px">
+      <button class="btn btn-sm" onclick="addUnit()">新增单位</button>
+    </div>
+    <table>
+      <thead><tr><th>单位编号</th><th>单位名称</th></tr></thead>
+      <tbody id="unitBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal-mask" id="modalMask" onclick="closeModal()"></div>
+<div class="modal" id="taskModal">
+  <div class="modal-header">
+    <h3 id="modalTitle">任务详情</h3>
+    <button class="close-x" onclick="closeModal()">✕</button>
+  </div>
+  <div class="stats" id="statArea"></div>
+  <div style="margin-bottom:12px">
+    <button class="btn btn-sm" id="submitBtn" onclick="submitTask()">提交到外部平台</button>
+    <a class="btn btn-outline btn-sm" id="downloadErrBtn" href="#" download>下载错误明细</a>
+  </div>
+  <div class="tabs">
+    <button class="tab active" id="tabRecords" onclick="switchTab('records')">缴费记录</button>
+    <button class="tab" id="tabBatches" onclick="switchTab('batches')">提交批次</button>
+  </div>
+  <div id="panelRecords">
+    <div class="filter-row">
+      <select id="recordStatusFilter" onchange="loadRecords(1)">
+        <option value="">全部状态</option>
+        <option value="VALID">校验通过</option>
+        <option value="INVALID">校验失败</option>
+        <option value="SUCCESS">上送成功</option>
+        <option value="FAILED">上送失败</option>
+        <option value="TIMEOUT">超时</option>
+      </select>
+    </div>
+    <table>
+      <thead><tr><th>行号</th><th>身份证号</th><th>姓名</th><th>月份</th><th>金额</th><th>单位编号</th><th>状态</th><th>说明</th></tr></thead>
+      <tbody id="recordBody"></tbody>
+    </table>
+    <div class="pager">
+      <button class="btn btn-outline btn-sm" onclick="loadRecords(recordPage-1)">上一页</button>
+      <span id="recordPageInfo"></span>
+      <button class="btn btn-outline btn-sm" onclick="loadRecords(recordPage+1)">下一页</button>
+    </div>
+  </div>
+  <div id="panelBatches" style="display:none">
+    <table>
+      <thead><tr><th>批次号</th><th>状态</th><th>记录数</th><th>成功</th><th>失败</th><th>重试次数</th><th>提交时间</th><th>完成时间</th><th>说明</th><th>操作</th></tr></thead>
+      <tbody id="batchBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let currentTaskId = null, recordPage = 1, recordPageSize = 50, recordTotal = 0;
+
+function toast(msg, ok=true) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + (ok ? 'ok' : 'err'); t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2600);
+}
+function tag(s) { return `<span class="tag tag-${s}">${statusText(s)}</span>`; }
+function statusText(s) {
+  return {PENDING:'待校验',VALIDATING:'校验中',VALIDATED:'待提交',SUBMITTING:'提交中',COMPLETED:'已完成',FAILED:'失败',
+    VALID:'校验通过',INVALID:'校验失败',SUCCESS:'成功',TIMEOUT:'超时',PARTIAL_FAILED:'部分失败'}[s] || s;
+}
+async function api(url, opts={}) {
+  const resp = await fetch('/api' + url, opts);
+  if (!resp.ok) { let msg = '请求失败'; try { msg = (await resp.json()).detail || msg; } catch(e){} throw new Error(msg); }
+  return resp.json();
+}
+
+async function uploadFile() {
+  const f = document.getElementById('fileInput').files[0];
+  if (!f) { toast('请先选择 CSV 文件', false); return; }
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    const task = await api('/tasks/upload', {method:'POST', body:fd});
+    toast(`任务 ${task.task_no} 已创建，校验完成：通过 ${task.valid_count} / 失败 ${task.invalid_count}`);
+    document.getElementById('fileInput').value = '';
+    loadTasks();
+  } catch(e) { toast(e.message, false); }
+}
+
+async function loadTasks() {
+  try {
+    const data = await api('/tasks?size=50');
+    const tb = document.getElementById('taskBody');
+    if (!data.items.length) { tb.innerHTML = '<tr><td colspan="11" class="empty">暂无任务，请先上传清单</td></tr>'; return; }
+    tb.innerHTML = data.items.map(t => `<tr>
+      <td>${t.task_no}</td><td>${esc(t.filename)}</td><td>${tag(t.status)}</td>
+      <td>${t.total_count}</td><td class="num-ok">${t.valid_count}</td><td class="num-err">${t.invalid_count}</td>
+      <td class="num-ok">${t.success_count}</td><td class="num-err">${t.failed_count}</td><td class="num-warn">${t.timeout_count}</td>
+      <td>${t.created_at||''}</td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="openTask(${t.id})">详情</button>
+        ${t.status==='VALIDATED' && t.valid_count>0 ? `<button class="btn btn-sm" onclick="submitTaskById(${t.id})">提交</button>` : ''}
+        ${(t.invalid_count+t.failed_count+t.timeout_count)>0 ? `<a class="btn btn-outline btn-sm" href="/api/tasks/${t.id}/errors/download" download>错误明细</a>` : ''}
+      </td></tr>`).join('');
+  } catch(e) { toast(e.message, false); }
+}
+
+async function openTask(taskId) {
+  currentTaskId = taskId; recordPage = 1;
+  document.getElementById('modalMask').style.display = 'block';
+  document.getElementById('taskModal').style.display = 'block';
+  await refreshModal();
+}
+function closeModal() {
+  document.getElementById('modalMask').style.display = 'none';
+  document.getElementById('taskModal').style.display = 'none';
+  currentTaskId = null; loadTasks();
+}
+async function refreshModal() {
+  if (!currentTaskId) return;
+  const t = await api('/tasks/' + currentTaskId);
+  document.getElementById('modalTitle').textContent = `任务 ${t.task_no}（${t.filename}）`;
+  document.getElementById('statArea').innerHTML = [
+    ['总数', t.total_count, ''], ['校验通过', t.valid_count, 'num-ok'], ['校验失败', t.invalid_count, 'num-err'],
+    ['上送成功', t.success_count, 'num-ok'], ['上送失败', t.failed_count, 'num-err'], ['超时', t.timeout_count, 'num-warn'],
+  ].map(([l,n,c]) => `<div class="stat"><div class="num ${c}">${n}</div><div class="label">${l}</div></div>`).join('')
+    + `<div class="stat"><div class="num">${statusText(t.status)}</div><div class="label">任务状态</div></div>`;
+  document.getElementById('submitBtn').disabled = !(t.status === 'VALIDATED' && t.valid_count > 0);
+  document.getElementById('downloadErrBtn').href = `/api/tasks/${t.id}/errors/download`;
+  loadRecords(recordPage); loadBatches();
+}
+function switchTab(name) {
+  document.getElementById('tabRecords').className = 'tab' + (name==='records' ? ' active' : '');
+  document.getElementById('tabBatches').className = 'tab' + (name==='batches' ? ' active' : '');
+  document.getElementById('panelRecords').style.display = name==='records' ? 'block' : 'none';
+  document.getElementById('panelBatches').style.display = name==='batches' ? 'block' : 'none';
+}
+async function loadRecords(page) {
+  if (!currentTaskId) return;
+  page = Math.max(1, page);
+  const status = document.getElementById('recordStatusFilter').value;
+  const data = await api(`/tasks/${currentTaskId}/records?status=${status}&page=${page}&size=${recordPageSize}`);
+  recordPage = page; recordTotal = data.total;
+  const tb = document.getElementById('recordBody');
+  tb.innerHTML = data.items.length ? data.items.map(r => `<tr>
+    <td>${r.row_no}</td><td>${esc(r.id_card)}</td><td>${esc(r.name)}</td><td>${r.month}</td>
+    <td>${r.amount}</td><td>${esc(r.unit_code)}</td><td>${tag(r.status)}</td>
+    <td style="white-space:normal;max-width:280px">${esc(r.error_msg||'')}</td></tr>`).join('')
+    : '<tr><td colspan="8" class="empty">无记录</td></tr>';
+  const pages = Math.max(1, Math.ceil(recordTotal / recordPageSize));
+  document.getElementById('recordPageInfo').textContent = `第 ${recordPage}/${pages} 页，共 ${recordTotal} 条`;
+}
+async function loadBatches() {
+  if (!currentTaskId) return;
+  const data = await api(`/tasks/${currentTaskId}/batches`);
+  const tb = document.getElementById('batchBody');
+  tb.innerHTML = data.items.length ? data.items.map(b => `<tr>
+    <td>${b.batch_no}</td><td>${tag(b.status)}</td><td>${b.record_count}</td>
+    <td class="num-ok">${b.success_count}</td><td class="num-err">${b.failed_count}</td><td>${b.retry_count}</td>
+    <td>${b.submitted_at||'-'}</td><td>${b.finished_at||'-'}</td>
+    <td style="white-space:normal;max-width:200px">${esc(b.error_msg||'')}</td>
+    <td>${b.retryable ? `<button class="btn btn-danger btn-sm" onclick="retryBatch(${b.id})">重试</button>` : ''}</td></tr>`).join('')
+    : '<tr><td colspan="10" class="empty">尚未提交，无批次</td></tr>';
+}
+async function submitTask() { if (currentTaskId) await submitTaskById(currentTaskId); await refreshModal(); }
+async function submitTaskById(taskId) {
+  try { await api(`/tasks/${taskId}/submit`, {method:'POST'}); toast('已触发分批提交'); setTimeout(loadTasks, 800); }
+  catch(e) { toast(e.message, false); }
+}
+async function retryBatch(batchId) {
+  try { await api(`/batches/${batchId}/retry`, {method:'POST'}); toast('批次重试完成'); await refreshModal(); loadTasks(); }
+  catch(e) { toast(e.message, false); }
+}
+async function loadUnits() {
+  const data = await api('/units');
+  document.getElementById('unitBody').innerHTML = data.items.map(u =>
+    `<tr><td>${esc(u.unit_code)}</td><td>${esc(u.unit_name)}</td></tr>`).join('');
+}
+async function addUnit() {
+  const code = document.getElementById('unitCode').value.trim();
+  const name = document.getElementById('unitName').value.trim();
+  if (!code || !name) { toast('请填写单位编号和名称', false); return; }
+  try {
+    await api('/units', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({unit_code: code, unit_name: name})});
+    toast('单位已添加'); document.getElementById('unitCode').value=''; document.getElementById('unitName').value='';
+    loadUnits();
+  } catch(e) { toast(e.message, false); }
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+loadTasks(); loadUnits();
+setInterval(() => { loadTasks(); if (currentTaskId) refreshModal(); }, 3000);
+</script>
+</body>
+</html>
